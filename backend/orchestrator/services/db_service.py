@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime
+import os
 
 class DBService:
     def __init__(self, db_name="nexus.db"):
@@ -21,7 +22,6 @@ class DBService:
         conn.close()
 
     def check_user_history(self, name):
-        """Memory: Checks if user exists."""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM loans WHERE name LIKE ? ORDER BY created_at DESC LIMIT 1", (f"%{name}%",))

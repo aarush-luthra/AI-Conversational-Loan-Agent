@@ -1,119 +1,130 @@
 import os
-import json
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.graph import StateGraph, START
+from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import SystemMessage, HumanMessage, AnyMessage
-from typing import Annotated, TypedDict
+from typing import Annotated, TypedDict, Literal
 from langgraph.graph.message import add_messages
+from pydantic import BaseModel
+
+# Import tools to assign to specific agents
 from agents.tools import (
-    check_user_history_tool, verification_agent_tool, 
-    get_market_rates_tool, underwriting_agent_tool, sanction_letter_tool
+    get_market_rates_tool, check_user_history_tool, # Sales Tools
+    verification_agent_tool,                        # KYC Tools
+    underwriting_agent_tool, sanction_letter_tool   # Underwriting Tools
 )
-import ast
 
 load_dotenv()
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=os.getenv("GOOGLE_API_KEY"))
 
-# Setup LLM
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, google_api_key=os.getenv("GOOGLE_API_KEY"))
-
-# Define Tools List
-tools = [check_user_history_tool, verification_agent_tool, get_market_rates_tool, underwriting_agent_tool, sanction_letter_tool]
-llm_with_tools = llm.bind_tools(tools)
-
-# Define State
+# === 1. Define State ===
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
+    next_agent: str # Tracks who the supervisor selected
 
-# MASTER AGENT PERSONA
-SYSTEM_PROMPT = """You are the 'Master Agent' for Team Nexus. You orchestrate 4 worker agents: Sales, Verification, Underwriting, and Sanction.
+# === 2. Define Worker Agents (Distinct Personas & Toolsets) ===
 
---- CONVERSATION FLOW ---
+# --- Sales Agent ---
+sales_tools = [get_market_rates_tool, check_user_history_tool]
+sales_llm = llm.bind_tools(sales_tools)
+SALES_PROMPT = "You are a charismatic Sales Agent. Greet users, check their history, discuss loan needs and rates. Do NOT perform KYC or underwriting tasks."
 
-1. **START (Memory Check)**:
-    - Ask for the user's Name.
-    - CALL `check_user_history_tool`.
-    - If user exists: Say "Welcome back!" and ask if they want a new loan.
-    - If new: Welcome them politely.
+def sales_node(state: AgentState):
+    # This agent only sees its own prompt and conversation history
+    result = sales_llm.invoke([SystemMessage(content=SALES_PROMPT)] + state["messages"])
+    return {"messages": [result]}
 
-2. **SALES PHASE (Sales Agent Role)**:
-    - Ask for the Loan Amount and Tenure they need.
-    - Use `get_market_rates_tool` to discuss interest rates if they ask.
-    - Once Amount is decided, ask for their PAN to proceed.
+# --- KYC Agent ---
+kyc_tools = [verification_agent_tool]
+kyc_llm = llm.bind_tools(kyc_tools)
+KYC_PROMPT = "You are a strict Verification Officer. Your ONLY job is to ask for a PAN number and verify it using your tool. Be precise and professional."
 
-3. **VERIFICATION PHASE (Verification Agent)**:
-    - CALL `verification_agent_tool` with their PAN.
-    - If invalid, stop. If valid, confirm their name.
+def kyc_node(state: AgentState):
+    result = kyc_llm.invoke([SystemMessage(content=KYC_PROMPT)] + state["messages"])
+    return {"messages": [result]}
 
-4. **UNDERWRITING PHASE (Underwriting Agent)**:
-    - Tell the user: "I will now evaluate your eligibility."
-    - CALL `underwriting_agent_tool` with the `amount`.
-    - **CRITICAL LOGIC**:
-        - If tool returns "APPROVED": Tell them the good news.
-        - If tool returns "REJECTED": Apologize and explain the specific reason given by the tool.
-        - If tool returns "NEED_SALARY": Ask the user: "Since this is a high amount, please provide your Monthly Salary."
-        - When user replies (e.g., "50000"), CALL `underwriting_agent_tool` AGAIN with BOTH `amount` and `monthly_salary`.
+# --- Underwriting Agent ---
+uw_tools = [underwriting_agent_tool, sanction_letter_tool]
+uw_llm = llm.bind_tools(uw_tools)
+UW_PROMPT = "You are a Risk Assessment Expert. Use your tools to evaluate eligibility. If approved and the user accepts, generate the sanction letter."
 
-5. **SANCTION PHASE (Sanction Agent)**:
-    - If APPROVED and user says "Proceed": CALL `sanction_letter_tool`.
-    - Provide the download link.
+def uw_node(state: AgentState):
+    result = uw_llm.invoke([SystemMessage(content=UW_PROMPT)] + state["messages"])
+    return {"messages": [result]}
 
-6. **END**: Thank the user.
-"""
+# === 3. Define the Supervisor (The Router) ===
+class RouterOutput(BaseModel):
+    """Structure for supervisor's decision."""
+    next: Literal["SalesAgent", "KYCAgent", "UnderwritingAgent", "FINISH"]
 
-def reasoner(state: AgentState):
-    msg = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
-    return {"messages": [llm_with_tools.invoke(msg)]}
+SUPERVISOR_PROMPT = """You are the Supervisor managing a loan team.
+Read the conversation history and decide which agent should act next.
+- **SalesAgent**: For greetings, history checks, discussing rates/amounts.
+- **KYCAgent**: When identity verification (PAN) is needed.
+- **UnderwritingAgent**: When loan eligibility needs calculation or approval.
+- **FINISH**: When the user is satisfied and the conversation is over.
+Output ONLY the name of the next agent."""
 
-# Graph Construction
+# Enforce structured output for reliable routing
+supervisor_llm = llm.with_structured_output(RouterOutput)
+
+def supervisor_node(state: AgentState):
+    # The supervisor reviews history and picks the next step
+    result = supervisor_llm.invoke([SystemMessage(content=SUPERVISOR_PROMPT)] + state["messages"])
+    # It does not generate a message, only updates the state
+    return {"next_agent": result.next}
+
+# === 4. Build the Graph ===
 memory = MemorySaver()
-builder = StateGraph(AgentState)
-builder.add_node("agent", reasoner)
-builder.add_node("tools", ToolNode(tools))
-builder.add_edge(START, "agent")
-builder.add_conditional_edges("agent", tools_condition)
-builder.add_edge("tools", "agent")
-graph = builder.compile(checkpointer=memory)
+workflow = StateGraph(AgentState)
 
-# Runner
+# Add Agents
+workflow.add_node("supervisor", supervisor_node)
+workflow.add_node("SalesAgent", sales_node)
+workflow.add_node("KYCAgent", kyc_node)
+workflow.add_node("UnderwritingAgent", uw_node)
+
+# Add Tool Executors for each worker
+workflow.add_node("sales_tools", ToolNode(sales_tools))
+workflow.add_node("kyc_tools", ToolNode(kyc_tools))
+workflow.add_node("uw_tools", ToolNode(uw_tools))
+
+# Define Flow
+workflow.add_edge(START, "supervisor")
+
+# Supervisor Routing Logic
+workflow.add_conditional_edges(
+    "supervisor",
+    lambda x: x["next_agent"],
+    {
+        "SalesAgent": "SalesAgent",
+        "KYCAgent": "KYCAgent",
+        "UnderwritingAgent": "UnderwritingAgent",
+        "FINISH": END
+    }
+)
+
+# Worker -> Tool -> Supervisor Loop
+# Each agent tries to use tools, then returns control to supervisor
+workflow.add_conditional_edges("SalesAgent", tools_condition, {"tools": "sales_tools", END: "supervisor"})
+workflow.add_edge("sales_tools", "SalesAgent")
+
+workflow.add_conditional_edges("KYCAgent", tools_condition, {"tools": "kyc_tools", END: "supervisor"})
+workflow.add_edge("kyc_tools", "KYCAgent")
+
+workflow.add_conditional_edges("UnderwritingAgent", tools_condition, {"tools": "uw_tools", END: "supervisor"})
+workflow.add_edge("uw_tools", "UnderwritingAgent")
+
+graph = workflow.compile(checkpointer=memory)
+
+# === 5. Execution ===
 def run_agent(user_input, thread_id):
     config = {"configurable": {"thread_id": thread_id}}
+    # Stream values to get the final message from the last agent that spoke
+    events = list(graph.stream({"messages": [HumanMessage(content=user_input)]}, config=config, stream_mode="values"))
+    final_message = events[-1]["messages"][-1].content
     
-    # Run the Agent
-    result = graph.invoke({"messages": [HumanMessage(content=user_input)]}, config=config)
-    
-    # Get the raw content from the last message
-    last_message = result["messages"][-1]
-    raw_content = last_message.content
-
-    # --- CLEANING LOGIC START ---
-    
-    # Case 1: If it's a list (Gemini sometimes returns [text, tool_call])
-    if isinstance(raw_content, list):
-        # Join all parts that are just text
-        final_text = ""
-        for part in raw_content:
-            if isinstance(part, dict) and "text" in part:
-                final_text += part["text"]
-            elif isinstance(part, str):
-                final_text += part
-        return final_text.strip()
-
-    # Case 2: If it's a String that LOOKS like a Dictionary (Your specific issue)
-    # Example: "{'type': 'text', 'text': 'Hello...', 'extras': ...}"
-    if isinstance(raw_content, str):
-        cleaned_str = raw_content.strip()
-        if cleaned_str.startswith("{") and "type" in cleaned_str:
-            try:
-                # Safely convert string to dict
-                parsed_dict = ast.literal_eval(cleaned_str)
-                # Return only the 'text' part
-                return parsed_dict.get("text", raw_content)
-            except:
-                # If parsing fails, just return the original string
-                return raw_content
-    
-    # Case 3: Standard Text
-    return str(raw_content)
+    if isinstance(final_message, list): return " ".join([str(c) for c in final_message])
+    return str(final_message)
