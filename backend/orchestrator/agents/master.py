@@ -17,7 +17,7 @@ from agents.tools import (
 )
 
 load_dotenv()
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=os.getenv("GOOGLE_API_KEY"))
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, google_api_key=os.getenv("GOOGLE_API_KEY"))
 
 # === 1. Define State ===
 class AgentState(TypedDict):
