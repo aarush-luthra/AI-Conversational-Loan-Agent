@@ -1,0 +1,21 @@
+# Ignore Environment Variables (Security Risk)
+.env
+env/
+venv/
+.venv/
+
+# Ignore Python Cache and Compiled files
+__pycache__/
+*.pyc
+
+# Ignore Database (Contains local user data)
+*.db
+*.sqlite3
+
+# Ignore OS specific files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE specific settings
+.vscode/
+.idea/
