@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
@@ -17,7 +17,7 @@ from agents.tools import (
 )
 
 load_dotenv()
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, google_api_key=os.getenv("GOOGLE_API_KEY"))
+llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, api_key=os.getenv("GROQ_API_KEY"))
 
 # === 1. Define State ===
 class AgentState(TypedDict):
@@ -106,22 +106,22 @@ workflow.add_conditional_edges(
     }
 )
 
-# Worker -> Tool -> Supervisor Loop
-# Each agent tries to use tools, then returns control to supervisor
-workflow.add_conditional_edges("SalesAgent", tools_condition, {"tools": "sales_tools", END: "supervisor"})
+# Worker -> Tool -> END (each turn completes after one agent responds)
+# Each agent tries to use tools if needed, then ends the turn
+workflow.add_conditional_edges("SalesAgent", tools_condition, {"tools": "sales_tools", END: END})
 workflow.add_edge("sales_tools", "SalesAgent")
 
-workflow.add_conditional_edges("KYCAgent", tools_condition, {"tools": "kyc_tools", END: "supervisor"})
+workflow.add_conditional_edges("KYCAgent", tools_condition, {"tools": "kyc_tools", END: END})
 workflow.add_edge("kyc_tools", "KYCAgent")
 
-workflow.add_conditional_edges("UnderwritingAgent", tools_condition, {"tools": "uw_tools", END: "supervisor"})
+workflow.add_conditional_edges("UnderwritingAgent", tools_condition, {"tools": "uw_tools", END: END})
 workflow.add_edge("uw_tools", "UnderwritingAgent")
 
 graph = workflow.compile(checkpointer=memory)
 
 # === 5. Execution ===
 def run_agent(user_input, thread_id):
-    config = {"configurable": {"thread_id": thread_id}}
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
     # Stream values to get the final message from the last agent that spoke
     events = list(graph.stream({"messages": [HumanMessage(content=user_input)]}, config=config, stream_mode="values"))
     final_message = events[-1]["messages"][-1].content
