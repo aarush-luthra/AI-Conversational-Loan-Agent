@@ -37,7 +37,7 @@ async function sendMessage() {
     } catch (e) {
         document.getElementById(loadingId)?.remove();
         console.error(e);
-        addMessage("⚠️ Error connecting to server.", "bot error");
+        addMessage("Error connecting to server. Please try again.", "bot error");
     }
 }
 
