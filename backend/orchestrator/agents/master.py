@@ -566,22 +566,3 @@ def run_agent(user_input: str, thread_id: str):
         logger.error(f"ERROR in run_agent: {str(e)}", exc_info=True)
         return f"I encountered an error: {str(e)}. Please try again or contact support."
 
-# ================= OPTIONAL: CLI TEST =================
-if __name__ == "__main__":
-    print("🏦 Personal Loan Assistant - Multi-Agent System")
-    print("=" * 60)
-    print("Type 'quit' to exit\n")
-    
-    thread_id = "test-session-001"
-    
-    while True:
-        user_input = input("\n👤 You: ").strip()
-        if user_input.lower() in ['quit', 'exit', 'bye']:
-            print("👋 Thank you for using our service!")
-            break
-        
-        if not user_input:
-            continue
-        
-        response = run_agent(user_input, thread_id)
-        print(f"\n🤖 Assistant: {response}")
