@@ -248,6 +248,7 @@ def kyc_node(state: AgentState):
 # --- Underwriting Agent ---
 uw_tools = [underwriting_agent_tool, sanction_letter_tool]
 uw_llm = llm.bind_tools(uw_tools)
+<<<<<<< HEAD
 
 UW_PROMPT = """You are Dr. Sharma, a Senior Credit Analyst. Your role is to evaluate loan eligibility fairly and transparently.
 
@@ -275,6 +276,23 @@ UW_PROMPT = """You are Dr. Sharma, a Senior Credit Analyst. Your role is to eval
 - Underwriting Status: {underwriting_status}
 
 Be professional, transparent, and helpful!"""
+=======
+UW_PROMPT = UW_PROMPT = """You are the Underwriting Agent. Your goal is to finalize the loan.
+
+YOUR TOOLBOX:
+1. `underwriting_agent_tool`: specific logic to Approve/Reject based on score/limit.
+2. `sanction_letter_tool`: GENERATES the PDF.
+
+STRICT PROCESS:
+1. Always call `underwriting_agent_tool` first with the amount.
+2. If the tool returns "APPROVED":
+   - Ask the user politely: "Congratulations, you are eligible! Shall I generate your sanction letter now?"
+3. If the user says "Yes" / "Proceed" / "Generate":
+   - **YOU MUST CALL `sanction_letter_tool` IMMEDIATELY.**
+   - Do not just say you did it. Actually trigger the tool.
+   - Once the tool returns a URL, give that URL to the user.
+"""
+>>>>>>> origin/main
 
 def uw_node(state: AgentState):
     logger.info("=== UNDERWRITING AGENT ACTIVATED ===")
