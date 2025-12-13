@@ -65,7 +65,7 @@ def kyc_node(state: AgentState):
 uw_tools = [underwriting_agent_tool, sanction_letter_tool]
 uw_llm = llm.bind_tools(uw_tools)
 UW_PROMPT = """You are a Risk Assessment and Underwriting Expert. Your job is to:
-1. Use underwriting_agent_tool to evaluate loan eligibility based on credit score and pre-approved limit
+1. You MUST use the user's PAN to check their specific credit score and limits using underwriting_agent_tool to evaluate loan eligibility based on credit score and pre-approved limit
 2. Handle three scenarios:
    - APPROVED: Congratulate the customer and offer to generate sanction letter
    - NEED_SALARY: Request salary slip upload and monthly salary amount, then re-evaluate

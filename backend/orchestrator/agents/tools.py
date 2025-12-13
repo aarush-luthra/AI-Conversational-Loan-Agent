@@ -33,11 +33,18 @@ def verification_agent_tool(pan: str):
 
 # ================= UNDERWRITING TOOLS =================
 @tool
-def underwriting_agent_tool(amount: int, monthly_salary: int = 0):
-    """Calculates eligibility. Returns APPROVED, REJECTED, or NEED_SALARY."""
+def underwriting_agent_tool(amount: int, pan: str, monthly_salary: int = 0):
+    """
+    Calculates eligibility. 
+    Requires 'pan' to fetch score/limit.
+    """
     try:
-        score = requests.post(f"{CREDIT_URL}/get-score").json().get("credit_score", 0)
-        limit = requests.post(f"{OFFER_URL}/get-limit").json().get("pre_approved_limit", 0)
+        # Pass PAN to these services now!
+        score_res = requests.post(f"{CREDIT_URL}/get-score", json={"pan": pan}).json()
+        limit_res = requests.post(f"{OFFER_URL}/get-limit", json={"pan": pan}).json()
+
+        score = score_res.get("credit_score", 0)
+        limit = limit_res.get("pre_approved_limit", 0)
 
         if score < 700: return {"status": "REJECTED", "reason": f"Low Credit Score: {score}"}
         if amount <= limit: return {"status": "APPROVED", "interest": 10.5}
