@@ -28,8 +28,9 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 llm = ChatOpenAI(
     model="gpt-4o-mini",  # or "gpt-4o" for GPT-4
-    temperature=0.7,
-    api_key=os.getenv("OPENAI_API_KEY")
+    temperature=0.3,  # Lower temperature for professional, consistent responses
+    api_key=os.getenv("OPENAI_API_KEY"),
+    streaming=True  # Enable streaming
 )
 
 # ================= STATE DEFINITION =================
@@ -111,6 +112,53 @@ def extract_pan(text: str) -> Optional[str]:
     # PAN format: 5 letters, 4 digits, 1 letter (e.g., ABCDE1234F)
     match = re.search(r'\b([A-Z]{5}[0-9]{4}[A-Z])\b', text.upper())
     return match.group(1) if match else None
+
+def validate_pan(pan: str) -> dict:
+    """Validate PAN number format using code-based validation.
+    
+    PAN Format: [A-Z]{5}[0-9]{4}[A-Z]
+    - First 5 characters: Uppercase letters
+    - Next 4 characters: Digits
+    - Last character: Uppercase letter
+    
+    Args:
+        pan: The PAN number to validate
+        
+    Returns:
+        dict: {"valid": bool, "error": str | None, "pan": str | None}
+    """
+    if not pan:
+        return {"valid": False, "error": "PAN number is required", "pan": None}
+    
+    # Normalize: remove spaces and convert to uppercase
+    pan = pan.strip().upper()
+    
+    # Check length
+    if len(pan) != 10:
+        return {
+            "valid": False, 
+            "error": f"PAN must be exactly 10 characters (got {len(pan)})",
+            "pan": None
+        }
+    
+    # Validate format with regex: [A-Z]{5}[0-9]{4}[A-Z]
+    pan_pattern = r'^[A-Z]{5}[0-9]{4}[A-Z]$'
+    if not re.match(pan_pattern, pan):
+        return {
+            "valid": False,
+            "error": "Invalid PAN format. Expected: 5 letters, 4 digits, 1 letter (e.g., ABCDE1234F)",
+            "pan": None
+        }
+    
+    # Additional validation: 4th character indicates holder type
+    # P = Individual, C = Company, H = HUF, A = AOP, B = BOI, etc.
+    holder_type = pan[3]
+    valid_holder_types = ['P', 'C', 'H', 'A', 'B', 'G', 'J', 'L', 'F', 'T']
+    if holder_type not in valid_holder_types:
+        logger.warning(f"Unusual PAN holder type: {holder_type}")
+    
+    logger.info(f"PAN validated successfully: {pan[:4]}****{pan[-2:]}")
+    return {"valid": True, "error": None, "pan": pan}
 
 # ================= WORKER AGENTS =================
 
@@ -220,6 +268,32 @@ def kyc_node(state: AgentState):
             "messages": [AIMessage(content="Your KYC verification is already complete. Let me connect you with our underwriting team for credit evaluation.")]
         }
     
+    # Try to extract PAN from user message first
+    last_user_msg = ""
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, HumanMessage):
+            last_user_msg = msg.content
+            break
+    
+    updates = {}
+    
+    # Code-based PAN validation (not LLM-based)
+    extracted_pan = extract_pan(last_user_msg)
+    if extracted_pan and not state.get("pan_number"):
+        # Validate PAN format using code-based validation
+        validation_result = validate_pan(extracted_pan)
+        
+        if validation_result["valid"]:
+            updates["pan_number"] = validation_result["pan"]
+            logger.info(f"PAN validated and stored: {extracted_pan[:4]}****{extracted_pan[-2:]}")
+        else:
+            # Return validation error message directly to user
+            error_msg = f"❌ **PAN Validation Error**: {validation_result['error']}\n\nPlease provide a valid PAN number in the format: **ABCDE1234F** (5 letters, 4 digits, 1 letter)"
+            logger.warning(f"PAN validation failed: {validation_result['error']}")
+            return {
+                "messages": [AIMessage(content=error_msg)]
+            }
+    
     # Build context-aware prompt
     prompt = KYC_PROMPT.format(
         customer_name=state.get("customer_name") or "Not provided yet",
@@ -228,27 +302,13 @@ def kyc_node(state: AgentState):
     )
     
     result = kyc_llm.invoke([SystemMessage(content=prompt)] + state["messages"])
-    
-    # Try to extract PAN from user message
-    last_user_msg = ""
-    for msg in reversed(state["messages"]):
-        if isinstance(msg, HumanMessage):
-            last_user_msg = msg.content
-            break
-    
-    updates = {"messages": [result]}
-    
-    pan = extract_pan(last_user_msg)
-    if pan and not state.get("pan_number"):
-        updates["pan_number"] = pan
-        logger.info(f"Extracted PAN: {pan[:4]}****{pan[-2:]}")
+    updates["messages"] = [result]
     
     return updates
 
 # --- Underwriting Agent ---
 uw_tools = [underwriting_agent_tool, sanction_letter_tool]
 uw_llm = llm.bind_tools(uw_tools)
-<<<<<<< HEAD
 
 UW_PROMPT = """You are Dr. Sharma, a Senior Credit Analyst. Your role is to evaluate loan eligibility fairly and transparently.
 
@@ -276,23 +336,6 @@ UW_PROMPT = """You are Dr. Sharma, a Senior Credit Analyst. Your role is to eval
 - Underwriting Status: {underwriting_status}
 
 Be professional, transparent, and helpful!"""
-=======
-UW_PROMPT = UW_PROMPT = """You are the Underwriting Agent. Your goal is to finalize the loan.
-
-YOUR TOOLBOX:
-1. `underwriting_agent_tool`: specific logic to Approve/Reject based on score/limit.
-2. `sanction_letter_tool`: GENERATES the PDF.
-
-STRICT PROCESS:
-1. Always call `underwriting_agent_tool` first with the amount.
-2. If the tool returns "APPROVED":
-   - Ask the user politely: "Congratulations, you are eligible! Shall I generate your sanction letter now?"
-3. If the user says "Yes" / "Proceed" / "Generate":
-   - **YOU MUST CALL `sanction_letter_tool` IMMEDIATELY.**
-   - Do not just say you did it. Actually trigger the tool.
-   - Once the tool returns a URL, give that URL to the user.
-"""
->>>>>>> origin/main
 
 def uw_node(state: AgentState):
     logger.info("=== UNDERWRITING AGENT ACTIVATED ===")
@@ -542,7 +585,7 @@ graph = build_graph()
 
 # ================= EXECUTION =================
 def run_agent(user_input: str, thread_id: str):
-    """Execute the agentic workflow for a user message"""
+    """Execute the agentic workflow for a user message (non-streaming)"""
     logger.info(f"\n{'='*60}")
     logger.info(f"USER INPUT: {user_input}")
     logger.info(f"THREAD ID: {thread_id}")
@@ -583,4 +626,56 @@ def run_agent(user_input: str, thread_id: str):
     except Exception as e:
         logger.error(f"ERROR in run_agent: {str(e)}", exc_info=True)
         return f"I encountered an error: {str(e)}. Please try again or contact support."
+
+
+def run_agent_stream(user_input: str, thread_id: str):
+    """Execute the agentic workflow with streaming response.
+    
+    This generator yields response chunks as they become available,
+    enabling real-time streaming to the frontend.
+    
+    Args:
+        user_input: The user's message
+        thread_id: Session/thread identifier
+        
+    Yields:
+        str: Response chunks as they stream in
+    """
+    logger.info(f"\n{'='*60}")
+    logger.info(f"[STREAMING] USER INPUT: {user_input}")
+    logger.info(f"[STREAMING] THREAD ID: {thread_id}")
+    logger.info(f"{'='*60}\n")
+    
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
+    
+    try:
+        final_response = ""
+        
+        # Stream through the graph with updates mode for token-level streaming
+        for event in graph.stream(
+            {"messages": [HumanMessage(content=user_input)]},
+            config=config,
+            stream_mode="updates"
+        ):
+            # Process each update event
+            for node_name, node_output in event.items():
+                if "messages" in node_output:
+                    for msg in node_output["messages"]:
+                        if isinstance(msg, AIMessage) and msg.content:
+                            # Yield the content chunk
+                            content = str(msg.content)
+                            if content and content != final_response:
+                                # Only yield new content
+                                new_content = content[len(final_response):] if content.startswith(final_response) else content
+                                if new_content:
+                                    yield new_content
+                                    final_response = content
+        
+        # If no response was streamed, yield error message
+        if not final_response:
+            yield "I apologize, but I'm having trouble processing your request. Could you please try again?"
+            
+    except Exception as e:
+        logger.error(f"ERROR in run_agent_stream: {str(e)}", exc_info=True)
+        yield f"I encountered an error: {str(e)}. Please try again or contact support."
 
