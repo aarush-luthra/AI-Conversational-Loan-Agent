@@ -20,6 +20,7 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:5000")
 
 # ================= PYDANTIC MODELS FOR VALIDATION =================
 class UnderwritingInput(BaseModel):
+    pan: str = Field(min_length=10, max_length=10, description="Customer PAN number")
     amount: int = Field(gt=0, le=10_000_000, description="Loan amount in rupees (max 1 crore)")
     monthly_salary: int = Field(ge=0, description="Monthly salary in rupees, 0 if unknown")
     
@@ -144,7 +145,7 @@ def verification_agent_tool(pan: str):
 
 # ================= UNDERWRITING TOOLS =================
 @tool(args_schema=UnderwritingInput)
-def underwriting_agent_tool(amount: int, monthly_salary: int = 0):
+def underwriting_agent_tool(pan: str, amount: int, monthly_salary: int = 0):
     """Evaluates loan eligibility based on credit score, pre-approved limit, and salary.
     
     Decision Logic:
@@ -155,18 +156,19 @@ def underwriting_agent_tool(amount: int, monthly_salary: int = 0):
     - EMI must be ≤ 50% of monthly salary
     
     Args:
+        pan: Customer PAN number (required for fetching credit data)
         amount: Requested loan amount in rupees
         monthly_salary: Monthly salary in rupees (0 if not provided yet)
         
     Returns:
         dict: Status (APPROVED/REJECTED/NEED_SALARY) with details
     """
-    logger.info(f"Underwriting evaluation: Amount={amount}, Salary={monthly_salary}")
+    logger.info(f"Underwriting evaluation: PAN={pan[:4]}****, Amount={amount}, Salary={monthly_salary}")
     
     try:
         # Fetch credit score
         try:
-            credit_response = call_api_with_retry(f"{CREDIT_URL}/get-score", {})
+            credit_response = call_api_with_retry(f"{CREDIT_URL}/get-score", {"pan": pan})
             credit_score = credit_response.get("credit_score", 0)
         except Exception as e:
             logger.error(f"Credit bureau error: {str(e)}")
@@ -177,7 +179,7 @@ def underwriting_agent_tool(amount: int, monthly_salary: int = 0):
         
         # Fetch pre-approved limit
         try:
-            offer_response = call_api_with_retry(f"{OFFER_URL}/get-limit", {})
+            offer_response = call_api_with_retry(f"{OFFER_URL}/get-limit", {"pan": pan})
             pre_approved_limit = offer_response.get("pre_approved_limit", 0)
         except Exception as e:
             logger.error(f"Offer service error: {str(e)}")

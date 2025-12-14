@@ -3,6 +3,7 @@ import re
 import json
 import logging
 from dotenv import load_dotenv
+from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -25,12 +26,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+# --- FIX START: ABSOLUTE PATH ---
+# We use the absolute path to guarantee the .env file is found.
+env_path = Path("/Users/anika/Documents/PROJECTS/AI-Conversational-Loan-Agent/.env")
+
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+    logger.info(f"OPENAI_API_KEY loaded successfully from: {env_path}")
+else:
+    logger.error(f"CRITICAL: .env file NOT found at: {env_path}")
+# --- FIX END ---
+
+# Initialize LLM
 llm = ChatOpenAI(
     model="gpt-4o-mini",  # or "gpt-4o" for GPT-4
-    temperature=0.3,  # Lower temperature for professional, consistent responses
+    temperature=0.3,      # Lower temperature for professional, consistent responses
     api_key=os.getenv("OPENAI_API_KEY"),
-    streaming=True  # Enable streaming
+    streaming=True        # Enable streaming
 )
 
 # ================= STATE DEFINITION =================
@@ -260,51 +272,73 @@ Keep it brief and professional!"""
 
 def kyc_node(state: AgentState):
     logger.info("=== KYC AGENT ACTIVATED ===")
-    
-    # Check if already verified
+
+    # If already verified
     if state.get("kyc_verified"):
-        logger.info("KYC already verified, skipping")
         return {
-            "messages": [AIMessage(content="Your KYC verification is already complete. Let me connect you with our underwriting team for credit evaluation.")]
+            "messages": [
+                AIMessage(
+                    content="✅ Your KYC is already verified. Let me connect you with our credit evaluation team."
+                )
+            ]
         }
-    
-    # Try to extract PAN from user message first
+
+    # Get last user message
     last_user_msg = ""
     for msg in reversed(state["messages"]):
         if isinstance(msg, HumanMessage):
             last_user_msg = msg.content
             break
-    
-    updates = {}
-    
-    # Code-based PAN validation (not LLM-based)
+
+    # Try extracting PAN
     extracted_pan = extract_pan(last_user_msg)
-    if extracted_pan and not state.get("pan_number"):
-        # Validate PAN format using code-based validation
-        validation_result = validate_pan(extracted_pan)
-        
-        if validation_result["valid"]:
-            updates["pan_number"] = validation_result["pan"]
-            logger.info(f"PAN validated and stored: {extracted_pan[:4]}****{extracted_pan[-2:]}")
-        else:
-            # Return validation error message directly to user
-            error_msg = f"❌ **PAN Validation Error**: {validation_result['error']}\n\nPlease provide a valid PAN number in the format: **ABCDE1234F** (5 letters, 4 digits, 1 letter)"
-            logger.warning(f"PAN validation failed: {validation_result['error']}")
-            return {
-                "messages": [AIMessage(content=error_msg)]
-            }
-    
-    # Build context-aware prompt
-    prompt = KYC_PROMPT.format(
-        customer_name=state.get("customer_name") or "Not provided yet",
-        kyc_status="Verified ✓" if state.get("kyc_verified") else "Pending verification",
-        loan_amount=f"₹{state.get('loan_amount'):,}" if state.get("loan_amount") else "Not specified"
-    )
-    
-    result = kyc_llm.invoke([SystemMessage(content=prompt)] + state["messages"])
-    updates["messages"] = [result]
-    
-    return updates
+
+    if not extracted_pan:
+        return {
+            "messages": [
+                AIMessage(
+                    content=(
+                        "To proceed, please share your **PAN number**.\n\n"
+                        "📌 Format: **ABCDE1234F**\n"
+                        "(5 letters, 4 digits, 1 letter)"
+                    )
+                )
+            ]
+        }
+
+    # Validate PAN using code (NO TOOL, NO LLM)
+    validation = validate_pan(extracted_pan)
+
+    if not validation["valid"]:
+        return {
+            "messages": [
+                AIMessage(
+                    content=(
+                        f"❌ **Invalid PAN**: {validation['error']}\n\n"
+                        "Please re-enter your PAN in this format: **ABCDE1234F**"
+                    )
+                )
+            ]
+        }
+
+    # ✅ PAN is valid → mark KYC verified
+    logger.info(f"PAN VERIFIED (CODE-BASED): {validation['pan']}")
+
+    return {
+        "pan_number": validation["pan"],
+        "kyc_verified": True,
+        "messages": [
+            AIMessage(
+                content=(
+                    "✅ **KYC Successful!**\n\n"
+                    "Your PAN has been verified successfully.\n"
+                    "I’ll now connect you with our credit evaluation team to assess your loan eligibility."
+                )
+            )
+        ]
+    }
+
+
 
 # --- Underwriting Agent ---
 uw_tools = [underwriting_agent_tool, sanction_letter_tool]
@@ -326,6 +360,7 @@ UW_PROMPT = """You are Dr. Sharma, a Senior Credit Analyst. Your role is to eval
 - Extract salary from customer response and call underwriting_agent_tool again
 - For rejections: Be empathetic, provide actionable suggestions
 - For approvals: Clearly state loan amount, interest rate, and next steps
+- **CRITICAL**: When calling underwriting_agent_tool, you MUST pass the PAN number: {pan_number}
 
 **Current Context:**
 - Customer Name: {customer_name}
@@ -339,35 +374,44 @@ Be professional, transparent, and helpful!"""
 
 def uw_node(state: AgentState):
     logger.info("=== UNDERWRITING AGENT ACTIVATED ===")
-    
-    # Build context-aware prompt
-    prompt = UW_PROMPT.format(
-        customer_name=state.get("customer_name") or "Customer",
-        pan_number=state.get("pan_number") or "Not provided",
-        loan_amount=f"₹{state.get('loan_amount'):,}" if state.get("loan_amount") else "Not specified",
-        monthly_salary=f"₹{state.get('monthly_salary'):,}" if state.get("monthly_salary") else "Not provided yet",
-        credit_score=state.get("credit_score") or "Pending evaluation",
-        underwriting_status=state.get("underwriting_status", "PENDING")
-    )
-    
-    result = uw_llm.invoke([SystemMessage(content=prompt)] + state["messages"])
-    
-    # Extract salary if customer provided it
+
     last_user_msg = ""
     for msg in reversed(state["messages"]):
         if isinstance(msg, HumanMessage):
             last_user_msg = msg.content
             break
-    
-    updates = {"messages": [result]}
-    
-    # Extract salary from user message
-    if not state.get("monthly_salary") or state.get("monthly_salary") == 0:
-        salary = extract_salary(last_user_msg)
-        if salary:
-            updates["monthly_salary"] = salary
-            logger.info(f"Extracted monthly salary: ₹{salary:,}")
-    
+
+    updates = {}
+
+    # ✅ Extract UPDATED loan amount (CRITICAL FIX)
+    amount = extract_loan_amount(last_user_msg)
+    if amount:
+        updates["loan_amount"] = amount
+        logger.info(f"Updated loan amount: ₹{amount:,}")
+
+    # Extract salary
+    salary = extract_salary(last_user_msg)
+    if salary:
+        updates["monthly_salary"] = salary
+        logger.info(f"Extracted monthly salary: ₹{salary:,}")
+
+    # Build prompt AFTER updates
+    prompt = UW_PROMPT.format(
+        customer_name=state.get("customer_name") or "Customer",
+        pan_number=state.get("pan_number") or "Not provided",
+        loan_amount=f"₹{updates.get('loan_amount', state.get('loan_amount')):,}"
+        if updates.get("loan_amount") or state.get("loan_amount")
+        else "Not specified",
+        monthly_salary=f"₹{updates.get('monthly_salary', state.get('monthly_salary')):,}"
+        if updates.get("monthly_salary") or state.get("monthly_salary")
+        else "Not provided",
+        credit_score=state.get("credit_score") or "Pending",
+        underwriting_status=state.get("underwriting_status", "PENDING"),
+    )
+
+    result = uw_llm.invoke([SystemMessage(content=prompt)] + state["messages"])
+
+    updates["messages"] = [result]
     return updates
 
 # ================= TOOL EXECUTION =================
@@ -472,11 +516,15 @@ SUPERVISOR_PROMPT = """You are the Master Orchestrator for a loan application sy
    - Need to evaluate credit eligibility
    - Status is NEED_SALARY and customer provided salary info
    - Customer confirmed they want sanction letter generated
+   - If user changes loan amount after rejection or limit warning,
+  ALWAYS route to UnderwritingAgent again and re-run credit evaluation.
+
 
 4. **FINISH** - Route when:
    - Sanction letter generated and shared with customer
    - Loan rejected and customer acknowledged
    - Customer explicitly wants to end conversation
+
 
 **Analysis Guidelines:**
 - Read the last 2-3 messages carefully
@@ -678,4 +726,3 @@ def run_agent_stream(user_input: str, thread_id: str):
     except Exception as e:
         logger.error(f"ERROR in run_agent_stream: {str(e)}", exc_info=True)
         yield f"I encountered an error: {str(e)}. Please try again or contact support."
-
