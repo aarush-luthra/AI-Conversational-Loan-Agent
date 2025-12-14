@@ -281,8 +281,8 @@ def sanction_letter_tool(name: str, pan: str, amount: int, interest: float):
     logger.info(f"Generating sanction letter for {name}, Amount: {amount}")
     
     try:
-        # Generate PDF
-        filename = pdf_service.generate(name, amount, interest)
+        # Generate PDF with PAN for enhanced details
+        filename = pdf_service.generate(name, amount, interest, pan=pan)
         pdf_url = f"{API_BASE_URL}/static/pdfs/{filename}"
         
         # Save to database
