@@ -2,7 +2,7 @@ import os
 import re
 import json
 import logging
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv # Added find_dotenv for robustness
 from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
@@ -26,23 +26,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- FIX START: ABSOLUTE PATH ---
-# We use the absolute path to guarantee the .env file is found.
-env_path = Path("/Users/anika/Documents/PROJECTS/AI-Conversational-Loan-Agent/.env")
+# --- FIX START: DYNAMIC PATH ---
+# Method 1: Automatically find .env file (Recommended)
+# This searches the directory tree upwards until it finds a .env file
+if not load_dotenv(find_dotenv()):
+    logger.warning("Could not automatically find .env file. Falling back to manual path construction.")
 
-if env_path.exists():
-    load_dotenv(dotenv_path=env_path)
-    logger.info(f"OPENAI_API_KEY loaded successfully from: {env_path}")
-else:
-    logger.error(f"CRITICAL: .env file NOT found at: {env_path}")
+    # Method 2: Construct path relative to this specific script file
+    # This gets the directory this script is running in
+    current_dir = Path(__file__).resolve().parent
+    
+    # If your .env is in the SAME folder as this script:
+    env_path = current_dir.parent / ".env"
+    
+    # NOTE: If this script is in a subfolder (e.g., /src/main.py) and .env is in root, 
+    # use: env_path = current_dir.parent / ".env"
+
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
+        logger.info(f"OPENAI_API_KEY loaded successfully from: {env_path}")
+    else:
+        logger.error(f"CRITICAL: .env file NOT found at: {env_path}")
 # --- FIX END ---
 
 # Initialize LLM
 llm = ChatOpenAI(
-    model="gpt-4o-mini",  # or "gpt-4o" for GPT-4
-    temperature=0.3,      # Lower temperature for professional, consistent responses
+    model="gpt-4o-mini",
+    temperature=0.3,
     api_key=os.getenv("OPENAI_API_KEY"),
-    streaming=True        # Enable streaming
+    streaming=True
 )
 
 # ================= STATE DEFINITION =================
@@ -178,7 +190,7 @@ def validate_pan(pan: str) -> dict:
 sales_tools = [get_market_rates_tool, check_user_history_tool]
 sales_llm = llm.bind_tools(sales_tools)
 
-SALES_PROMPT = """You are Nexus, an enthusiastic and empathetic Personal Loan Advisor. Your goal is to build rapport and understand customer needs.
+SALES_PROMPT = """You are Nexus, an enthusiastic and empathetic Personal Loan Advisor. Your goal is to build rapport, engage conversationally and persuade the user to take your loan and understand customer needs.
 
 **Your Responsibilities:**
 1. Warmly greet new customers and introduce yourself
@@ -200,7 +212,7 @@ SALES_PROMPT = """You are Nexus, an enthusiastic and empathetic Personal Loan Ad
 - Requested Amount: {loan_amount}
 - KYC Status: {kyc_status}
 
-Remember: You're building trust and gathering initial requirements. Keep it conversational!"""
+Remember: You're building trust and gathering initial requirements. Keep it very conversational and be very persuasive!"""
 
 def sales_node(state: AgentState):
     logger.info("=== SALES AGENT ACTIVATED ===")
