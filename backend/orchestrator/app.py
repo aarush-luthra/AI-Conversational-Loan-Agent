@@ -9,18 +9,32 @@ from werkzeug.utils import secure_filename
 import ast
 from agents.unified_agent import run_agent
 
-# Configure Tesseract path for Windows
+# Configure Tesseract path (works on both Windows and Linux)
 try:
     import pytesseract
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-    print("✅ Tesseract-OCR configured successfully")
+    tesseract_path = os.getenv('TESSERACT_PATH', None)
+    if tesseract_path:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_path
+        print(f"✅ Tesseract-OCR configured from env: {tesseract_path}")
+    elif os.name == 'nt':  # Windows
+        default_path = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+        if os.path.exists(default_path):
+            pytesseract.pytesseract.tesseract_cmd = default_path
+            print("✅ Tesseract-OCR configured from default Windows path")
+    else:
+        print("✅ Tesseract-OCR will use system PATH (Linux/Docker)")
 except ImportError:
     print("⚠️ pytesseract not installed")
 except Exception as e:
     print(f"⚠️ Error configuring Tesseract: {e}")
 
-# Configure Poppler path for pdf2image
-POPPLER_PATH = r'C:\Users\Ritika\poppler\poppler-24.08.0\Library\bin'
+# Configure Poppler path for pdf2image (optional, system PATH can be used)
+POPPLER_PATH = os.getenv('POPPLER_PATH', None)
+if POPPLER_PATH is None and os.name == 'nt':  # Windows
+    default_poppler = r'C:\Users\Ritika\poppler\poppler-24.08.0\Library\bin'
+    if os.path.exists(default_poppler):
+        POPPLER_PATH = default_poppler
+        print(f"✅ Poppler-utils configured from default Windows path")
 
 # --- App setup ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -319,7 +333,15 @@ def serve_pdf(filename):
 
 
 if __name__ == "__main__":
-    print("Starting backend on http://127.0.0.1:5000")
-    # IMPORTANT: run from backend/orchestrator so imports work
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    # Production: Use PORT env var (Render sets this)
+    # Development: Default to 5000
+    port = int(os.getenv('PORT', 5000))
+    is_production = os.getenv('FLASK_ENV', 'development') == 'production'
+    
+    # In production, listen on all interfaces (0.0.0.0)
+    # In development, listen only on localhost (127.0.0.1)
+    host = '0.0.0.0' if is_production else '127.0.0.1'
+    
+    print(f"Starting backend on {host}:{port} (Flask Environment: {'production' if is_production else 'development'})")
+    app.run(host=host, port=port, debug=not is_production)
 

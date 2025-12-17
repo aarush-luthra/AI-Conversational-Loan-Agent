@@ -1,4 +1,7 @@
-const API_URL = "http://127.0.0.1:5000/chat";
+// Determine API URL dynamically based on environment
+const API_BASE = window.location.origin; // Auto-detects production or localhost
+const API_URL = `${API_BASE}/chat`;
+
 let attachedFile = null;
 
 function handleFileSelect(event) {
