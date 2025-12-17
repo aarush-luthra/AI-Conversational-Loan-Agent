@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: nexus-loan-agent
+    env: python
+    region: oregon
+    plan: free
+    
+    # Build command (Render will auto-detect Dockerfile)
+    buildCommand: pip install -r backend/requirements.txt
+    
+    # Start command
+    startCommand: python backend/orchestrator/app.py
+    
+    # Environment variables
+    envVars:
+      - key: OPENAI_API_KEY
+        scope: run
+        sync: false
+      
+      - key: FLASK_ENV
+        value: production
+      
+      - key: PORT
+        value: 5000
+      
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    
+    # Health check (optional)
+    healthCheckPath: /health
+    
+    # Disk size
+    disk:
+      name: data
+      mountPath: /app/backend/orchestrator/static
+      sizeGB: 2

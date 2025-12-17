@@ -53,3 +53,7 @@ def setup_mock_db():
     
     conn.commit()
     conn.close()
+    print(f"✅ Database setup complete! Total users: {len(random_users) + len(edge_cases)}")
+
+if __name__ == '__main__':
+    setup_mock_db()
