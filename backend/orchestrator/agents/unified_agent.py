@@ -136,6 +136,11 @@ If monthly_salary is shown above (not "Not provided"), you MUST:
 4. Then ask for PAN to proceed with KYC verification
 5. NEVER go blank - ALWAYS respond when salary is present!
 
+**IMPORTANT - SALARY VERIFICATION:**
+- If user TYPES salary without uploading a payslip → Ask them to upload the payslip for confirmation
+- Example: "I appreciate you sharing your monthly salary. However, to proceed, could you please upload your payslip for verification? This helps us confirm your income."
+- Only accept salary as verified when it comes from a payslip upload, not from text input alone
+
 **Example response when salary is uploaded:**
 "Thank you for uploading your payslip! I can see your monthly salary is ₹70,000.
 
@@ -212,6 +217,9 @@ def agent_node(state: AgentState):
     # Check if this is a payslip upload message (force re-extraction of salary)
     is_payslip_upload = "uploaded my payslip" in last_user_msg.lower() or "monthly salary is" in last_user_msg.lower()
     
+    # If salary is typed without payslip, ask for payslip confirmation
+    is_salary_typed = extract_salary(last_user_msg) is not None and not is_payslip_upload
+    
     # Extract loan amount
     if not state.get("loan_amount"):
         amount = extract_loan_amount(last_user_msg)
@@ -219,8 +227,8 @@ def agent_node(state: AgentState):
             updates["loan_amount"] = amount
             logger.info(f"Extracted loan amount: ₹{amount:,}")
     
-    # Extract salary (force re-extraction for payslip uploads)
-    if not state.get("monthly_salary") or is_payslip_upload:
+    # Extract salary ONLY from payslip uploads, not from typed text
+    if (not state.get("monthly_salary") or is_payslip_upload) and is_payslip_upload:
         salary = extract_salary(last_user_msg)
         if salary:
             updates["monthly_salary"] = salary
@@ -248,8 +256,13 @@ def agent_node(state: AgentState):
         sanction_letter="Generated ✓" if state.get("sanction_letter_url") else "Not generated"
     )
     
+    # Add note about salary verification if needed
+    salary_note = ""
+    if is_salary_typed:
+        salary_note = "\n\nIMPORTANT: The user just mentioned their monthly salary in text, but they haven't uploaded a payslip yet. Acknowledge their salary amount and ask them to upload their payslip for verification before proceeding."
+    
     # Get response from LLM
-    result = agent_llm.invoke([SystemMessage(content=prompt)] + state["messages"])
+    result = agent_llm.invoke([SystemMessage(content=prompt + salary_note)] + state["messages"])
     
     updates["messages"] = [result]
     return updates
