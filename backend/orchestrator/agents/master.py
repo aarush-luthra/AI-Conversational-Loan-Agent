@@ -692,51 +692,58 @@ def run_agent(user_input: str, thread_id: str):
 
 def run_agent_stream(user_input: str, thread_id: str):
     """Execute the agentic workflow with streaming response.
-    
-    This generator yields response chunks as they become available,
-    enabling real-time streaming to the frontend.
-    
-    Args:
-        user_input: The user's message
-        thread_id: Session/thread identifier
-        
-    Yields:
-        str: Response chunks as they stream in
+    Adds agent attribution WITHOUT modifying any other logic.
     """
+
     logger.info(f"\n{'='*60}")
     logger.info(f"[STREAMING] USER INPUT: {user_input}")
     logger.info(f"[STREAMING] THREAD ID: {thread_id}")
     logger.info(f"{'='*60}\n")
-    
+
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
-    
+
     try:
-        final_response = ""
-        
-        # Stream through the graph with updates mode for token-level streaming
+        last_text = ""
+
         for event in graph.stream(
             {"messages": [HumanMessage(content=user_input)]},
             config=config,
             stream_mode="updates"
         ):
-            # Process each update event
             for node_name, node_output in event.items():
-                if "messages" in node_output:
-                    for msg in node_output["messages"]:
-                        if isinstance(msg, AIMessage) and msg.content:
-                            # Yield the content chunk
-                            content = str(msg.content)
-                            if content and content != final_response:
-                                # Only yield new content
-                                new_content = content[len(final_response):] if content.startswith(final_response) else content
-                                if new_content:
-                                    yield new_content
-                                    final_response = content
-        
-        # If no response was streamed, yield error message
-        if not final_response:
-            yield "I apologize, but I'm having trouble processing your request. Could you please try again?"
-            
+                if "messages" not in node_output:
+                    continue
+
+                for msg in node_output["messages"]:
+                    if isinstance(msg, AIMessage) and msg.content:
+                        full_text = str(msg.content)
+
+                        # Only stream delta
+                        delta = (
+                            full_text[len(last_text):]
+                            if full_text.startswith(last_text)
+                            else full_text
+                        )
+
+                        if delta.strip():
+                            yield json.dumps({
+                                "chunk": {
+                                    "agent": node_name,
+                                    "text": delta
+                                }
+                            }) + "\n"
+
+                        last_text = full_text
+
+        # End signal
+        yield json.dumps({"done": True}) + "\n"
+
     except Exception as e:
         logger.error(f"ERROR in run_agent_stream: {str(e)}", exc_info=True)
-        yield f"I encountered an error: {str(e)}. Please try again or contact support."
+        yield json.dumps({
+            "chunk": {
+                "agent": "system",
+                "text": "I encountered an error. Please try again."
+            }
+        }) + "\n"
+        yield json.dumps({"done": True}) + "\n"

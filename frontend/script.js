@@ -1,87 +1,109 @@
-const API_URL = "http://127.0.0.1:5000/chat";
+document.addEventListener("DOMContentLoaded", () => {
+    const chat = document.getElementById("chat");
+    const input = document.getElementById("messageInput");
+    const sendBtn = document.getElementById("send-btn");
 
+    if (!chat || !input || !sendBtn) {
+        console.error("❌ Chat UI elements missing");
+        return;
+    }
 
-async function sendMessage() {
-    const input = document.getElementById("user-input");
-    const msg = input.value.trim();
-    if (!msg) return;
+    function createBubble(sender) {
+        const bubble = document.createElement("div");
+        bubble.className = `message ${sender}`;
+        chat.appendChild(bubble);
+        chat.scrollTop = chat.scrollHeight;
+        return bubble;
+    }
 
-    addMessage(msg, "user");
-    input.value = "";
+    async function sendMessage() {
+        const message = input.value.trim();
+        if (!message) return;
 
-    // Add loading bubble
-    const loadingId = "loading-" + Date.now();
-    addMessage("", "bot temporary", loadingId);
+        // User bubble
+        const userBubble = createBubble("user");
+        userBubble.textContent = message;
 
-    try {
-        const res = await fetch(API_URL, {
+        input.value = "";
+
+        // Bot bubble
+        const botBubble = createBubble("bot");
+
+        const response = await fetch("http://127.0.0.1:5000/chat/stream", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: msg, session_id: "demo_user" })
+            body: JSON.stringify({
+                message,
+                session_id: "web"
+            })
         });
 
-        const data = await res.json();
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let agentLabelAdded = false;
 
-        // Remove loading bubble
-        const loadingBubble = document.getElementById(loadingId);
-        if (loadingBubble) loadingBubble.remove();
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
 
-        // Handle Object vs String
-        let responseText = data.response;
-        if (typeof responseText === 'object') {
-            responseText = JSON.stringify(responseText);
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith("data:")) continue;
+
+                const payload = line.replace("data:", "").trim();
+                if (!payload) continue;
+
+                try {
+                    const outer = JSON.parse(payload);
+
+                    if (outer.chunk) {
+                        let inner = outer.chunk;
+
+                        // 🔥 UNWRAP DOUBLE-ENCODED JSON
+                        if (typeof inner === "string") {
+                            inner = JSON.parse(inner);
+                        }
+
+                        const chunk = inner.chunk;
+
+                        if (chunk?.agent && !agentLabelAdded) {
+                            const label = document.createElement("div");
+                            label.className = "agent-label";
+                            label.textContent =
+                                chunk.agent === "SalesAgent"
+                                    ? "Sales Agent"
+                                    : chunk.agent === "KYCAgent"
+                                        ? "KYC Agent"
+                                        : chunk.agent === "UnderwritingAgent"
+                                            ? "Credit Analyst"
+                                            : chunk.agent;
+
+                            botBubble.appendChild(label);
+                            agentLabelAdded = true;
+                        }
+
+                        if (chunk?.text) {
+                            botBubble.appendChild(
+                                document.createTextNode(chunk.text)
+                            );
+                            chat.scrollTop = chat.scrollHeight;
+                        }
+                    }
+
+                    if (outer.done) return;
+                } catch (err) {
+                    console.error("❌ Stream parse error:", err, payload);
+                }
+            }
         }
-
-        addMessage(responseText, "bot");
-
-    } catch (e) {
-        document.getElementById(loadingId)?.remove();
-        console.error(e);
-        addMessage("Error connecting to server. Please try again.", "bot error");
-    }
-}
-
-function addMessage(text, type, id = null) {
-    const box = document.getElementById("chat-box");
-    const div = document.createElement("div");
-
-    // Check if it's a loading/typing bubble or a real message
-    if (type.includes("temporary")) {
-        div.className = `message ${type}`;
-        div.id = id;
-        div.innerHTML = `
-            <div class="typing-dots">
-                <span class="dot"></span>
-                <span class="dot"></span>
-                <span class="dot"></span>
-            </div>
-        `;
-    } else {
-        div.className = `message ${type}`;
-        if (id) div.id = id;
-
-        if (type.includes("bot")) {
-            // 1. Parse Markdown to HTML
-            let htmlContent = marked.parse(text);
-
-            // 2. Custom cleanup: Make raw links clickable
-
-            const linkRegex = /(?<!href=")(https?:\/\/[^\s<]+)/g;
-            const linkReplacement = `<a href="$1" target="_blank" class="download-link">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                Open Document
-            </a>`;
-            htmlContent = htmlContent.replace(linkRegex, linkReplacement);
-
-            div.innerHTML = htmlContent;
-        } else {
-            // User messages are just plain text
-            div.innerText = text;
-        }
     }
 
-    box.appendChild(div);
-    box.scrollTop = box.scrollHeight;
-}
-
-function handleEnter(e) { if (e.key === "Enter") sendMessage(); }
+    sendBtn.addEventListener("click", sendMessage);
+    input.addEventListener("keydown", e => {
+        if (e.key === "Enter") sendMessage();
+    });
+});
