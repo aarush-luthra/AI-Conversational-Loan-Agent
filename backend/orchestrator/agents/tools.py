@@ -222,8 +222,28 @@ def underwriting_agent_tool(pan: str, amount: int, monthly_salary: int = 0):
                     "pre_approved_limit": pre_approved_limit
                 }
             
+            # USER REQUIREMENT: Salary during loan duration should be at least 2x the loan amount
+            # Assuming 24-month loan duration
+            loan_duration_months = 24
+            total_salary_over_duration = monthly_salary * loan_duration_months
+            required_salary = amount * 2
+            
+            logger.info(f"Salary Check: Total over {loan_duration_months} months = ₹{total_salary_over_duration}, Required (2x loan) = ₹{required_salary}")
+            
+            if total_salary_over_duration < required_salary:
+                return {
+                    "status": "REJECTED",
+                    "reason": f"Total salary over {loan_duration_months} months (₹{total_salary_over_duration:,}) is less than 2x the loan amount (₹{required_salary:,})",
+                    "monthly_salary": monthly_salary,
+                    "loan_duration_months": loan_duration_months,
+                    "total_salary": total_salary_over_duration,
+                    "required_amount": required_salary,
+                    "max_loan_amount": int(total_salary_over_duration / 2),
+                    "suggestion": f"Maximum eligible loan based on your salary: ₹{int(total_salary_over_duration / 2):,}"
+                }
+            
             # Calculate EMI (simple estimation: amount/24 months * 1.1 for interest)
-            estimated_emi = (amount / 24) * 1.1
+            estimated_emi = (amount / loan_duration_months) * 1.1
             max_allowed_emi = 0.5 * monthly_salary
             
             logger.info(f"EMI Check: Estimated={estimated_emi}, Max Allowed={max_allowed_emi}")
@@ -236,7 +256,8 @@ def underwriting_agent_tool(pan: str, amount: int, monthly_salary: int = 0):
                     "credit_score": credit_score,
                     "monthly_emi": round(estimated_emi, 2),
                     "monthly_salary": monthly_salary,
-                    "reason": "Salary verification successful - EMI within affordability"
+                    "loan_duration_months": loan_duration_months,
+                    "reason": "Salary verification successful - Meets 2x loan requirement and EMI within affordability"
                 }
             else:
                 return {
@@ -244,8 +265,8 @@ def underwriting_agent_tool(pan: str, amount: int, monthly_salary: int = 0):
                     "reason": f"EMI (₹{round(estimated_emi, 2)}) exceeds 50% of salary (₹{monthly_salary})",
                     "estimated_emi": round(estimated_emi, 2),
                     "monthly_salary": monthly_salary,
-                    "max_loan_amount": int(max_allowed_emi * 24 / 1.1),
-                    "suggestion": f"Maximum eligible amount based on your salary: ₹{int(max_allowed_emi * 24 / 1.1)}"
+                    "max_loan_amount": int(max_allowed_emi * loan_duration_months / 1.1),
+                    "suggestion": f"Maximum eligible amount based on EMI: ₹{int(max_allowed_emi * loan_duration_months / 1.1):,}"
                 }
         
         # Rule 4: Amount exceeds 2x pre-approved limit

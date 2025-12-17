@@ -4,7 +4,7 @@ import os
 
 app = Flask(__name__)
 # Path to the shared DB (assuming you run this from backend/ root)
-DB_PATH = 'mock_bank.db'
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'mock_bank.db')
 
 def get_user(pan):
     if not os.path.exists(DB_PATH): return None

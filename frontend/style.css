@@ -346,6 +346,34 @@ input:focus {
     box-shadow: 0 0 0 3px rgba(114, 99, 255, 0.1);
 }
 
+/* Attach Button */
+button#attach-btn {
+    background: rgba(114, 99, 255, 0.1);
+    border: 1px solid rgba(114, 99, 255, 0.2);
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    color: var(--primary-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(114, 99, 255, 0.1);
+}
+
+button#attach-btn:hover {
+    background: rgba(114, 99, 255, 0.2);
+    border-color: rgba(114, 99, 255, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(114, 99, 255, 0.2);
+}
+
+button#attach-btn:active {
+    transform: translateY(0);
+}
+
 /* Send Button - Floating Circular */
 button#send-btn {
     width: 48px;
