@@ -20,14 +20,17 @@ document.addEventListener("DOMContentLoaded", () => {
         const message = input.value.trim();
         if (!message) return;
 
-        // User bubble
+        /* ---------- User Bubble ---------- */
         const userBubble = createBubble("user");
         userBubble.textContent = message;
-
         input.value = "";
 
-        // Bot bubble
+        /* ---------- Bot Bubble ---------- */
         const botBubble = createBubble("bot");
+
+        let fullText = "";
+        let agentName = null;
+        let agentDetected = false;
 
         const response = await fetch("http://127.0.0.1:5000/chat/stream", {
             method: "POST",
@@ -41,7 +44,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-        let agentLabelAdded = false;
 
         while (true) {
             const { value, done } = await reader.read();
@@ -63,17 +65,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (outer.chunk) {
                         let inner = outer.chunk;
 
-                        // 🔥 UNWRAP DOUBLE-ENCODED JSON
+                        // Handle double-encoded JSON
                         if (typeof inner === "string") {
                             inner = JSON.parse(inner);
                         }
 
                         const chunk = inner.chunk;
 
-                        if (chunk?.agent && !agentLabelAdded) {
-                            const label = document.createElement("div");
-                            label.className = "agent-label";
-                            label.textContent =
+                        /* ---------- Agent Detection ---------- */
+                        if (chunk?.agent && !agentDetected) {
+                            agentName =
                                 chunk.agent === "SalesAgent"
                                     ? "Sales Agent"
                                     : chunk.agent === "KYCAgent"
@@ -82,14 +83,29 @@ document.addEventListener("DOMContentLoaded", () => {
                                             ? "Credit Analyst"
                                             : chunk.agent;
 
-                            botBubble.appendChild(label);
-                            agentLabelAdded = true;
+                            agentDetected = true;
                         }
 
+                        /* ---------- Streaming Markdown ---------- */
                         if (chunk?.text) {
-                            botBubble.appendChild(
-                                document.createTextNode(chunk.text)
-                            );
+                            fullText += chunk.text;
+
+                            // Clear and re-render (stream-safe)
+                            botBubble.innerHTML = "";
+
+                            // Agent label (small + colored)
+                            if (agentName) {
+                                const label = document.createElement("div");
+                                label.className = "agent-label";
+                                label.textContent = agentName;
+                                botBubble.appendChild(label);
+                            }
+
+                            // Markdown-rendered content
+                            const content = document.createElement("div");
+                            content.innerHTML = marked.parse(fullText);
+                            botBubble.appendChild(content);
+
                             chat.scrollTop = chat.scrollHeight;
                         }
                     }
