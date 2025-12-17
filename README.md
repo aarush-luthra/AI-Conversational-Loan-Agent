@@ -4,166 +4,135 @@
 
 **Team Nexus** presents an AI-driven conversational chatbot designed to automate the end-to-end personal loan origination process for Non-Banking Financial Companies (NBFCs). This solution replaces manual sales processes with an intelligent 24/7 AI agent system to increase conversion rates and operational efficiency.
 
-Built with **LangGraph + Groq (Llama 3.1)** for fast, reliable multi-agent orchestration.
+Built with **LangGraph + OpenAI GPT-4o-mini** for intelligent loan processing with payslip OCR and automated KYC verification.
 
 -----
 
-## 1\. The Challenge
+## 1. The Challenge
 
   * **Problem:** The existing manual process for upselling personal loans is inefficient, costly, and creates operational bottlenecks, slowing growth.
-  * **Solution:** A conversational AI built on a **Master-Worker Multi-Agent Architecture**. A central **Master Agent (Supervisor)** with reasoning capabilities intelligently routes the conversation flow to specialized **Worker Agents** (Sales, KYC, Underwriting) that independently manage specific parts of the customer journey with their own tools and expertise.
+  * **Solution:** A conversational AI built on a **Unified Single-Agent Architecture**. A central intelligent agent handles the entire customer journey—from loan inquiry through KYC verification, underwriting, salary verification via payslip OCR, and final approval with automated sanction letter generation.
 
 -----
 
-## 2\. Live Demo
-
-End-users and judges can access the fully deployed chatbot here without running any code.
-
-**🔴 Live Demo URL:** `[INSERT YOUR RENDER URL HERE]`
-
-*Note: The live demo is hosted on Render. Please allow a moment for the cold-start of the backend services if the bot does not reply immediately.*
-
------
-
-## 3\. System Architecture
-
-This is a true multi-agent system where distinct personas handle different tasks, orchestrated by a supervisor.
+## 2. System Architecture
 
 ### A. Backend: The "Brain" (Orchestrator)
 
-  * Built with **Python + Flask**, hosting a **LangGraph** state machine designed on the **Supervisor-Worker** pattern.
-  * Uses **Groq API (Llama 3.1)** as the **LLM engine** for fast, efficient AI responses with high rate limits.
-  * The **Master Agent (Supervisor)** analyzes conversation history with reasoning and intelligently routes to specialized **Worker Agents**. It does not use tools itself.
+  * Built with **Python + Flask**, hosting a **LangGraph** unified agent state machine
+  * Uses **OpenAI API (GPT-4o-mini)** as the LLM engine for intelligent, conversational responses
+  * Single agent orchestrates all workflow stages: Sales → Salary Verification → KYC → Underwriting → Sanction
+  * **Payslip OCR Integration**: Uses Tesseract-OCR + pdf2image to automatically extract salary from uploaded payslips
 
-### B. Worker Agents (Distinct Personas)
+### B. Key Features
 
-The Master Agent delegates control to these specialized agents, each with its own unique system prompt and allowed set of tools:
+1. **Smart Salary Verification:**
+   - Accepts payslip uploads (PDF/PNG/JPG)
+   - Automatic OCR extraction of monthly salary
+   - Asks for payslip confirmation if user types salary without uploading
+   - Validates salary against 2x loan rule (salary × 24 months ≥ 2 × loan amount)
 
-1.  **Sales Agent:** An enthusiastic, persuasive agent that warmly greets users, builds rapport, checks history, discusses loan needs, amounts, tenure options, and interest rates. Convinces customers about loan benefits.
-2.  **KYC Agent:** A professional verification officer dedicated solely to verifying user identity (PAN number) using the CRM tool. Handles all KYC verification tasks.
-3.  **Underwriting Agent:** A risk assessment expert that:
-    * Fetches credit scores from mock credit bureau
-    * Evaluates eligibility based on pre-approved limits
-    * Handles three scenarios:
-      - **Instant Approval**: Amount ≤ pre-approved limit
-      - **Conditional Approval**: Amount ≤ 2× limit (requires salary slip, EMI must be ≤ 50% of salary)
-      - **Rejection**: Amount > 2× limit OR credit score < 700
-    * Generates PDF sanction letters for approved loans
+2. **Intelligent KYC Verification:**
+   - PAN number validation
+   - Integration with mock CRM service for customer verification
+   - Tracks KYC status throughout conversation
+
+3. **Loan Eligibility Assessment:**
+   - 2x salary rule validation
+   - EMI must be ≤ 50% of monthly salary
+   - Credit score check (via mock credit bureau)
+   - Pre-approved limit validation (via mock offer mart)
+
+4. **Automated Sanction Letter:**
+   - PDF generation for approved loans
+   - Downloadable directly from chat interface
+   - Includes loan terms, interest rates, EMI, and tenure
 
 ### C. Mocked Bank Infrastructure
 
-To simulate a real banking environment, three independent Flask microservices run separately:
+Three independent Flask microservices run separately to simulate real banking APIs:
 
-  * **Mock CRM Server (Port 5001):** Responds to KYC validation requests.
-  * **Mock Credit Bureau (Port 5002):** Provides dummy credit scores (650-850).
-  * **Mock Offer Mart (Port 5003):** Provides pre-approved loan limits.
+  * **Mock CRM Server (Port 5001):** Responds to KYC/PAN validation requests
+  * **Mock Credit Bureau (Port 5002):** Provides dummy credit scores (650-850)
+  * **Mock Offer Mart (Port 5003):** Provides pre-approved loan limits
 
 -----
 
-## 4\. 📁 Project Structure & File Details
-
-Here is a breakdown of the updated repository structure.
+## 3. 📁 Project Structure
 
 ```text
-nexus_project/
-├── backend/                        # Server-side code (Python/Flask)
-│   ├── mock_services/              # Independent microservices simulating bank APIs
+AI-Conversational-Loan-Agent/
+├── backend/
+│   ├── mock_services/
 │   │   ├── crm.py                  # Mock CRM (Port 5001)
 │   │   ├── credit_bureau.py        # Mock Credit Bureau (Port 5002)
 │   │   └── offer_mart.py           # Mock Offer Mart (Port 5003)
 │   │
-│   ├── orchestrator/               # The main application "brain" (Port 5000)
-│   │   ├── agents/                 # AI & Business Logic
-│   │   │   ├── master.py           # Defines the Supervisor Agent and distinct Worker Agents (Sales, KYC, Underwriting) and their routing logic.
-│   │   │   └── tools.py            # The specific Python functions callable by the Worker Agents.
+│   ├── orchestrator/
+│   │   ├── agents/
+│   │   │   ├── unified_agent.py    # Single unified agent handling entire workflow
+│   │   │   └── tools.py            # KYC, underwriting, and sanction letter tools
 │   │   │
-│   │   ├── services/               # Supporting utility services
-│   │   │   ├── db_service.py       # Database Manager for SQLite operations.
-│   │   │   └── pdf_service.py      # PDF Generator using ReportLab.
+│   │   ├── services/
+│   │   │   ├── db_service.py       # SQLite database manager
+│   │   │   └── pdf_service.py      # PDF generation for sanction letters
 │   │   │
 │   │   ├── static/
-│   │   │   └── pdfs/               # Generated PDF sanction letters are saved here.
+│   │   │   ├── pdfs/               # Generated sanction letter PDFs
+│   │   │   └── uploads/            # User-uploaded payslips (temporary)
 │   │   │
-│   │   └── app.py                  # Main Flask Entry Point handles /chat API.
+│   │   └── app.py                  # Main Flask application (Port 5000)
 │   │
-│   └── requirements.txt            # Python dependencies (now includes honcho, pydantic).
+│   └── requirements.txt
 │
-├── frontend/                       # Client-side code (Web Browser)
-│   ├── index.html                  # The main HTML page for the chat interface.
-│   ├── style.css                   # Styling for the chat UI with markdown support.
-│   └── script.js                   # Handles user input, calls backend, renders responses.
-├── .env.example                    # Template for environment variables.
-└── Procfile                        # Configuration for running all 4 services with one command using Honcho.
+├── frontend/
+│   ├── index.html                  # Chat interface
+│   ├── style.css                   # Responsive styling
+│   └── script.js                   # Chat logic and API integration
+│
+├── .env                            # Environment variables (OpenAI API key)
+├── README.md                       # This file
+└── INSTALL_TESSERACT.md           # Tesseract-OCR installation guide
 ```
 
 -----
 
-## 5\. 🔄 System Data Flow
-
-The following diagram illustrates the flow of data in the new multi-agent architecture.
-
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/410e94ab-2b7d-4544-ac3d-b053223a805f" />
-
-
------
-
-## 6\. Key Features
-
-  * **True Multi-Agent System:** A Master Agent (Supervisor) with reasoning capabilities intelligently routes tasks to distinct, specialized Worker Agents based on conversation context.
-  * **Conversational & Persuasive:** Sales agent mimics human sales executives with warm greetings, rapport building, and persuasive techniques.
-  * **Smart Tool Execution:** Agents seamlessly call tools (CRM, Credit Bureau, Offer Mart) and formulate natural responses based on results.
-  * **Robust Workflow:** Fixed architecture prevents infinite loops with proper tool execution flow (Agent → Tools → Agent with results → Response).
-  * **Explainable AI (XAI):** Provides transparent reasons for loan approvals or rejections, including credit score analysis and EMI calculations.
-  * **End-to-End Automation:** Automated pipeline from initial chat to final PDF sanction letter generation with download links.
-  * **RBI-Compliant Design:** Secure, tamper-proof audit trail via SQLite logs tracking all loan applications and decisions.
-  * **State Management:** Tracks KYC verification status, loan amounts, and underwriting progress across the conversation.
-
------
-
-## 7\. Tech Stack
+## 4. Tech Stack
 
 | Layer | Technology | Purpose |
 | :--- | :--- | :--- |
-| **Frontend** | HTML5, CSS3, JavaScript | Responsive web chat interface with Markdown rendering. |
-| **Backend** | Python, Flask, Flask-CORS | Manages the main orchestration service API. |
-| **AI Agents** | LangChain (LangGraph), Groq API (Llama 3.1) | Implements the Supervisor-Worker multi-agent architecture with fast, efficient LLM responses. |
-| **Database** | SQLite (Local/Embedded) | Securely stores user data and loan logs. |
-| **PDF Gen** | ReportLab | Automatic generation of sanction letters. |
-| **Mock Services** | Flask microservices | CRM (Port 5001), Credit Bureau (Port 5002), Offer Mart (Port 5003). |
+| **Frontend** | HTML5, CSS3, JavaScript, Marked.js | Responsive web chat with Markdown rendering |
+| **Backend** | Python 3.9+, Flask, Flask-CORS | REST API orchestration |
+| **AI** | LangChain, LangGraph, OpenAI GPT-4o-mini | Unified agent for intelligent processing |
+| **OCR** | Tesseract-OCR, pdf2image, pdfplumber, pytesseract | Payslip analysis and salary extraction |
+| **Database** | SQLite | User data and loan application logs |
+| **PDF Generation** | ReportLab | Sanction letter creation |
+| **Mock Services** | Flask microservices | CRM, Credit Bureau, Offer Mart APIs |
 
 -----
 
-## 8\. 👨‍💻 For Developers: How to Run Locally
-
-Follow these steps to clone the repository and run the entire system with a single command.
+## 5. 🚀 Quick Start Guide
 
 ### Prerequisites
 
-  * Python 3.9+
-  * Git
-  * A Groq API Key (Get one free here: [Groq Console](https://console.groq.com/))
+- Python 3.9+
+- OpenAI API Key
+- Tesseract-OCR installed (see INSTALL_TESSERACT.md)
+- Git
 
-### Step 1: Clone the Repository
+### Step 1: Clone Repository
 
 ```bash
 git clone https://github.com/HR-coding/AI-Conversational-Loan-Agent.git
 cd AI-Conversational-Loan-Agent
 ```
 
-### Step 2: Environment Configuration
+### Step 2: Set Up Environment
 
-Create `.env` files in both the **project root** and **backend/** directories:
+Create `.env` in project root:
 
-**Root .env file:**
 ```bash
-GROQ_API_KEY="gsk_...[YOUR_ACTUAL_GROQ_API_KEY]"
-API_BASE_URL="http://localhost:5000"
-```
-
-**backend/.env file:**
-```bash
-GROQ_API_KEY="gsk_...[YOUR_ACTUAL_GROQ_API_KEY]"
-API_BASE_URL="http://localhost:5000"
+OPENAI_API_KEY="sk-proj-..."
 ```
 
 ### Step 3: Install Dependencies
@@ -172,52 +141,137 @@ API_BASE_URL="http://localhost:5000"
 pip install -r backend/requirements.txt
 ```
 
-Key packages include:
-- `langchain-groq` - Groq LLM integration
-- `langgraph` - Multi-agent orchestration
-- `flask` & `flask-cors` - Backend API
-- `reportlab` - PDF generation
+### Step 4: Start All Services
 
-### Step 4: Start Mock Services
-
-Open **3 separate terminals** and run each mock service:
-
+**Terminal 1 - CRM Service:**
 ```bash
-# Terminal 1 - CRM Service
 cd backend/mock_services
 python crm.py
+```
 
-# Terminal 2 - Credit Bureau
+**Terminal 2 - Credit Bureau:**
+```bash
 cd backend/mock_services
 python credit_bureau.py
+```
 
-# Terminal 3 - Offer Mart
+**Terminal 3 - Offer Mart:**
+```bash
 cd backend/mock_services
 python offer_mart.py
 ```
 
-### Step 5: Start Main Backend
-
-Open a **4th terminal**:
-
+**Terminal 4 - Main Backend:**
 ```bash
 cd backend/orchestrator
 python app.py
 ```
 
-Backend will start on `http://127.0.0.1:5000`
+Backend runs on: `http://127.0.0.1:5000`
 
-### Step 6: Launch Frontend
+### Step 5: Open Frontend
 
-Open `frontend/index.html` directly in your browser or double-click the file.
+Navigate to `http://127.0.0.1:5000` in your browser.
 
-The chat interface will connect to `http://localhost:5000/chat` automatically.
+### Step 6: Test the System
 
-### Step 7: Start Chatting!
+Sample test with PAN: `ABCDE1000F`
 
-Try these sample conversations:
-1. "Hi, I need a loan for my business"
-2. Provide PAN number when asked (e.g., "ABCDE1234F")
-3. System will evaluate eligibility and generate sanction letter if approved
+1. Ask: "I need a loan for ₹70,000"
+2. Upload payslip (use sample_payslip.png)
+3. Provide PAN when asked
+4. System evaluates and approves/rejects
+5. Download sanction letter if approved
 
 -----
+
+## 6. 🔑 Key Features
+
+✅ **Payslip OCR** - Automatic salary extraction from uploaded payslips  
+✅ **Smart Salary Verification** - Asks for payslip if user only types salary  
+✅ **2x Salary Rule** - Validates loan amount against eligible limit  
+✅ **EMI Validation** - Ensures EMI ≤ 50% of monthly salary  
+✅ **PAN Verification** - Real-time KYC validation via mock CRM  
+✅ **Credit Score Check** - Evaluates creditworthiness  
+✅ **Sanction Letter** - Auto-generated PDF for approved loans  
+✅ **Responsive UI** - Mobile-friendly chat interface  
+✅ **Markdown Support** - Rich text responses with formatting  
+✅ **RBI Compliant** - Audit trail via SQLite logs  
+
+-----
+
+## 7. Important Notes
+
+### Tesseract-OCR Setup
+
+On **Windows**: Must install separately. See [INSTALL_TESSERACT.md](INSTALL_TESSERACT.md)
+
+Expected path: `C:\Program Files\Tesseract-OCR\tesseract.exe`
+
+### Poppler for PDF Processing
+
+Download from: https://github.com/oschwartz10612/poppler-windows/releases/
+
+Expected path: `C:\Users\[USERNAME]\poppler\poppler-24.08.0\Library\bin`
+
+### Mock Service Databases
+
+First run creates `mock_bank.db` with 1005 test customers.  
+Test PAN: `ABCDE1000F` through `ABCDE5000F`
+
+### CORS Configuration
+
+Frontend serves from Flask at `http://127.0.0.1:5000`  
+API endpoint: `http://127.0.0.1:5000/chat`
+
+-----
+
+## 8. API Reference
+
+### POST /chat
+
+Send a message to the agent
+
+**Request:**
+```json
+{
+  "message": "I need a loan for 20000",
+  "session_id": "demo_user"
+}
+```
+
+**With File Upload:**
+```
+FormData:
+- message: "I'm uploading my payslip"
+- session_id: "demo_user"
+- file: <payslip.png>
+```
+
+**Response:**
+```json
+{
+  "response": "Thank you for uploading your payslip! I can see your monthly salary is ₹70,000..."
+}
+```
+
+-----
+
+## 9. Troubleshooting
+
+| Issue | Solution |
+| --- | --- |
+| "Module not found" | Run: `pip install -r backend/requirements.txt` |
+| OCR not working | Install Tesseract following INSTALL_TESSERACT.md |
+| Backend not responding | Ensure all 4 services running on correct ports |
+| CORS errors | Check Flask-CORS enabled in app.py |
+| Mock services disconnected | Restart services and backend |
+| Blank screen after upload | Hard refresh browser (Ctrl+Shift+R) |
+
+-----
+
+## 10. Team
+
+**EY Techathon 6.0 - Team Nexus**
+
+Built with ❤️ for the BFSI Track
