@@ -111,7 +111,7 @@ AI-Conversational-Loan-Agent/
 
 -----
 
-## 5. 🚀 Quick Start Guide
+## 5. Quick Start Guide
 
 ### Prerequisites
 
@@ -166,7 +166,7 @@ Sample test with PAN: `ABCDE1000F`
 
 -----
 
-## 6. 🔑 Key Features
+## 6. Key Features
 
 ✅ **Payslip OCR** - Automatic salary extraction from uploaded payslips  
 ✅ **Smart Salary Verification** - Asks for payslip if user only types salary  
@@ -181,7 +181,12 @@ Sample test with PAN: `ABCDE1000F`
 
 -----
 
-## 7. Important Notes
+## 7. Live Website
+link:  https://loan-agent-3ttm.onrender.com/
+
+----
+
+## 8. Important Notes
 
 ### Tesseract-OCR Setup
 
@@ -207,7 +212,7 @@ API endpoint: `http://127.0.0.1:5000/chat`
 
 -----
 
-## 8. API Reference
+## 9. API Reference
 
 ### POST /chat
 
@@ -238,7 +243,7 @@ FormData:
 
 -----
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Issue | Solution |
 | --- | --- |
@@ -251,6 +256,6 @@ FormData:
 
 -----
 
-## 10. Team
+## 11. Team
 
 **EY Techathon 6.0 - Team Nexus**
