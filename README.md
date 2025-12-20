@@ -212,38 +212,7 @@ API endpoint: `http://127.0.0.1:5000/chat`
 
 -----
 
-## 9. API Reference
-
-### POST /chat
-
-Send a message to the agent
-
-**Request:**
-```json
-{
-  "message": "I need a loan for 20000",
-  "session_id": "demo_user"
-}
-```
-
-**With File Upload:**
-```
-FormData:
-- message: "I'm uploading my payslip"
-- session_id: "demo_user"
-- file: <payslip.png>
-```
-
-**Response:**
-```json
-{
-  "response": "Thank you for uploading your payslip! I can see your monthly salary is ₹70,000..."
-}
-```
-
------
-
-## 10. Troubleshooting
+## 9. Troubleshooting
 
 | Issue | Solution |
 | --- | --- |
@@ -256,6 +225,6 @@ FormData:
 
 -----
 
-## 11. Team
+## 10. Team
 
 **EY Techathon 6.0 - Team Nexus**
