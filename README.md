@@ -143,28 +143,9 @@ pip install -r backend/requirements.txt
 
 ### Step 4: Start All Services
 
-**Terminal 1 - CRM Service:**
+**Terminal *
 ```bash
-cd backend/mock_services
-python crm.py
-```
-
-**Terminal 2 - Credit Bureau:**
-```bash
-cd backend/mock_services
-python credit_bureau.py
-```
-
-**Terminal 3 - Offer Mart:**
-```bash
-cd backend/mock_services
-python offer_mart.py
-```
-
-**Terminal 4 - Main Backend:**
-```bash
-cd backend/orchestrator
-python app.py
+honcho start
 ```
 
 Backend runs on: `http://127.0.0.1:5000`
@@ -273,5 +254,3 @@ FormData:
 ## 10. Team
 
 **EY Techathon 6.0 - Team Nexus**
-
-Built with ❤️ for the BFSI Track
